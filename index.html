@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Tech-Image AI - Create stunning images from text prompts using advanced Flux.2 AI technology"
+    />
+    <title>Tech-Image | AI Image Generation</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="main-wrapper">
+    <!-- Core Sync Overlay -->
+    <div id="syncOverlay" class="sync-overlay hidden">
+      <div class="sync-content">
+        <div class="premium-loader"></div>
+        <h2 id="syncStatus">Initializing Studio...</h2>
+        <p id="syncDetail">Syncing your workspace with our cloud engine.</p>
+        <div id="redirectCounter" class="redirect-counter hidden">
+          Redirecting to Home in <span id="countDown">3</span>s
+        </div>
+        <button id="syncBackHome" class="nav-btn hidden" style="margin-top: 20px;">Return to Home</button>
+      </div>
+    </div>
+
+    <!-- Global Premium Progress Bar -->
+    <div id="topProgressBar" class="top-progress-bar"></div>
+    <!-- Navbar -->
+    <nav class="navbar">
+      <div class="nav-container">
+        <div class="logo" id="logoToHome">
+          <h1 class="logo-text">Tech<span>Image</span></h1>
+        </div>
+        <div class="nav-links">
+          <a href="#" id="navGenerateLink" class="nav-link-item">Generate Image</a>
+          <a href="#" id="navChatLink" class="nav-link-item">AI Chat</a>
+          <a href="#" id="navPricingLink" class="nav-link-item">Pricing</a>
+        </div>
+        <div class="nav-actions" id="navActions">
+          <button id="mobileNavToggle" class="mobile-nav-toggle" aria-label="Open menu">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+          </button>
+          <!-- Admin Button (hidden by default) -->
+          <button id="navAdminBtn" class="admin-btn hidden">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 15l-2 5-1-1-4 4-4-4 4-4-1-1 5-2"/>
+              <path d="M17 3l4 4-9 9-4-4 9-9z"/>
+            </svg>
+            Admin Panel
+          </button>
+          <div id="navCredits" class="nav-credits hidden">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            <span id="navUserCredits">5</span> Credits
+          </div>
+          <button id="navLoginBtn" class="nav-btn hidden">Login</button>
+          <div id="userProfile" class="user-profile hidden">
+            <div class="profile-trigger" id="profileTrigger">
+              <div id="userPfp" class="user-pfp"></div>
+              <svg class="chevron-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </div>
+            <div class="profile-dropdown" id="profileDropdown">
+              <div class="dropdown-header">
+                <div class="user-info">
+                  <span id="userName">User Name</span>
+                  <span id="userEmail" class="user-email">user@example.com</span>
+                  <div class="credit-badge">
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                    </svg>
+                    <span id="userCreditsDropdown">5</span> Credits
+                  </div>
+                </div>
+              </div>
+              <ul class="dropdown-menu">
+                <li><a href="#" id="customizeProfileLink"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Customize Profile</a></li>
+                <li><a href="#" id="viewHistoryLink"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Settings & History</a></li>
+                <li class="divider"></li>
+                <li><a href="#" id="logoutBtn" class="logout-link"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Logout</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Mobile Nav Sidebar (small screens) -->
+    <div id="mobileNavSidebar" class="mobile-nav-sidebar hidden" aria-hidden="true">
+      <div class="mobile-nav-header">
+        <h4>Menu</h4>
+        <button id="mobileNavClose" class="close-mobile-nav" aria-label="Close menu">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <nav class="mobile-nav-links">
+        <a href="#" id="mobileGenerateLink">Generate Image</a>
+        <a href="#" id="mobileChatLink">AI Chat</a>
+        <a href="#" id="mobilePricingLink">Pricing</a>
+        <button id="mobileAdminBtn" class="admin-btn hidden">Admin Panel</button>
+      </nav>
+    </div>
+    <!-- Backdrop for mobile nav (click to close) -->
+    <div id="mobileNavBackdrop" class="mobile-nav-backdrop hidden" aria-hidden="true"></div>
+
+    <!-- Decorative Background Elements -->
+    <div class="bg-gradient"></div>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+    <div class="bg-particles"></div>
+
+    <div class="main-wrapper">
+      <!-- Landing Section -->
+      <section id="landingSection" class="landing-section">
+        <div class="hero">
+          <h2 class="hero-title">The Future of Art is <span>Artificial</span></h2>
+          <p class="hero-subtitle">Chat with our AI assistant for creative inspiration, or generate stunning images instantly with Flux.2 Klein technology.</p>
+          <div class="hero-buttons">
+            <button id="getStartedBtn" class="primary-btn">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              Chat with AI
+            </button>
+            <button id="generateImageBtn" class="primary-btn">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <path d="M21 15L16 10L5 21"/>
+              </svg>
+              Generate Image
+            </button>
+          </div>
+        </div>
+
+        <div class="samples-gallery">
+          <h3>Community Creations</h3>
+          <div class="gallery-grid">
+            <div class="gallery-item">
+              <img src="public/gallery1.jpg" alt="Cyberpunk City">
+              <div class="item-overlay"><span>Cyberpunk Metropolis</span></div>
+            </div>
+            <div class="gallery-item">
+              <img src="public/gallery2.jpg" alt="Majestic Dragon">
+              <div class="item-overlay"><span>Emerald Drake</span></div>
+            </div>
+            <div class="gallery-item">
+              <img src="public/gallery3.jpg" alt="Retro Hovercar">
+              <div class="item-overlay"><span>Synthwave Flyer</span></div>
+            </div>
+            <div class="gallery-item">
+              <img src="public/gallery4.jpg" alt="Crystal Cave">
+              <div class="item-overlay"><span>Crystal Sanctuary</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Auth Modal/Section -->
+      <section id="authSection" class="auth-section hidden">
+        <div class="auth-card">
+          <h2>Welcome to Tech-Image</h2>
+          <p>Join the community of AI creators</p>
+          <button id="googleLoginBtn" class="google-btn">
+            <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
+            Continue with Google
+          </button>
+          <div class="divider"><span>OR</span></div>
+          <div class="auth-form">
+            <input type="email" id="emailInput" placeholder="Email Address">
+            <input type="password" id="passwordInput" placeholder="Password">
+            <button id="emailAuthBtn" class="primary-btn">Continue</button>
+          </div>
+          <p class="auth-footer">By continuing, you agree to our Terms of Service.</p>
+        </div>
+      </section>
+
+      <!-- Username Setup Overlay (for new Google users) -->
+      <div id="usernameSetupOverlay" class="sync-overlay hidden">
+        <div class="sync-content" style="max-width: 450px;">
+          <div class="username-setup-card">
+            <h2 style="font-family: var(--font-display); margin-bottom: 0.5rem;">Set Your Username</h2>
+            <p style="color: var(--color-gray-400); margin-bottom: 1.5rem;">Choose a unique username. This is permanent and cannot be changed later.</p>
+            
+            <div class="username-input-wrapper">
+              <input type="text" id="usernameSetupInput" placeholder="your_username" maxlength="20" autocomplete="off">
+            </div>
+            
+            <div id="usernameSetupStatus" class="username-status"></div>
+            
+            <div class="username-warning">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+              <span>Warning: Your username is permanent and cannot be changed!</span>
+            </div>
+            
+            <button id="confirmUsernameBtn" class="primary-btn" disabled>Confirm Username</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Customize Profile Section -->
+      <section id="customizeSection" class="customize-section hidden">
+        <div class="settings-card">
+          <h2>Customize Your Profile</h2>
+          <div class="settings-group">
+            <div class="pfp-edit-wrapper">
+              <div id="settingsPfp" class="user-pfp large"></div>
+              <div class="pfp-controls">
+                <label class="setting-label">Profile Image</label>
+                <div class="upload-btn-wrapper" style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                  <input type="file" id="pfpFileInput" accept="image/*" hidden>
+                  <button type="button" class="nav-btn outline" id="pfpUploadBtn" style="padding: 0.5rem 1rem; font-size: 0.85rem;">Upload Photo</button>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Username Field -->
+            <div class="username-edit-wrapper">
+              <label for="usernameInput" class="setting-label">Username</label>
+              <div class="username-display-wrapper" id="usernameDisplayWrapper">
+                <span id="currentUsernameDisplay" class="current-username">username</span>
+                <button type="button" id="copyUsernameBtn" class="copy-username-btn" title="Copy username">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                  </svg>
+                  Copy
+                </button>
+                <span class="username-locked-badge">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0110 0v4"/>
+                  </svg>
+                  Locked
+                </span>
+              </div>
+              <div class="username-set-wrapper hidden" id="usernameSetWrapper">
+                <div class="username-input-wrapper small">
+                  <input type="text" id="usernameInput" placeholder="choose_username" maxlength="20" autocomplete="off">
+                </div>
+                <div id="usernameStatus" class="username-status"></div>
+                <p class="username-warning-inline">⚠️ Username is permanent and cannot be changed!</p>
+                <button id="setUsernameBtn" class="nav-btn" style="margin-top: 0.5rem;" disabled>Set Username</button>
+              </div>
+            </div>
+            
+            <div class="name-edit-wrapper">
+              <label for="displayNameInput" class="setting-label">Display Name</label>
+              <div class="display-name-controls">
+                <input type="text" id="displayNameInput" class="setting-input" placeholder="Enter your name" disabled>
+                <button type="button" id="editDisplayNameBtn" class="edit-btn">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                  Change
+                </button>
+              </div>
+            </div>
+            <button id="saveProfileBtn" class="primary-btn">Save Changes</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- History Section -->
+      <section id="historySection" class="history-section hidden">
+        <div class="settings-card">
+          <h2>Generation History & Settings</h2>
+          <!-- Current Plan Info -->
+          <div class="plan-info-group">
+            <div class="plan-details">
+              <h3>Active Subscription</h3>
+              <p>You are currently on the <strong>Free Trial</strong> plan.</p>
+            </div>
+            <div class="plan-badge">Free Trial</div>
+          </div>
+          <div class="divider"></div>
+          
+          <!-- AI Training Toggle -->
+          <div class="toggle-group">
+            <div class="toggle-info">
+              <h3>Community Training</h3>
+              <p>Allow our AI models to learn from your prompts to improve future generations.</p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="aiTrainingToggle">
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <!-- Notification Toggle -->
+          <div class="toggle-group">
+            <div class="toggle-info">
+              <h3>Notifications</h3>
+              <p>Receive alerts when your generation is complete or when we update the models.</p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="notificationsToggle">
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <!-- History Loading State -->
+          <div id="historyLoading" class="history-loading-container hidden">
+            <div class="premium-loader-bar">
+              <div class="premium-loader-fill"></div>
+            </div>
+            <p class="loading-status">Syncing Your Gallery...</p>
+          </div>
+          
+          <div class="history-list" id="historyList">
+            <!-- History items will be injected here -->
+            <p class="empty-history">Your generation history will appear here.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Admin Panel Section -->
+      <section id="adminSection" class="admin-section hidden">
+        <div class="admin-container">
+          <div class="admin-header">
+            <h2>
+              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 15l-2 5-1-1-4 4-4-4 4-4-1-1 5-2"/>
+                <path d="M17 3l4 4-9 9-4-4 9-9z"/>
+              </svg>
+              Admin Dashboard
+            </h2>
+            <p>Manage users, credits, and system settings</p>
+          </div>
+          
+          <!-- Stats Cards -->
+          <div class="admin-stats-grid" id="adminStatsGrid">
+            <div class="stat-card">
+              <div class="stat-icon users">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                  <circle cx="9" cy="7" r="4"/>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+              </div>
+              <div class="stat-info">
+                <span class="stat-value" id="statTotalUsers">0</span>
+                <span class="stat-label">Total Users</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon admins">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 15l-2 5-1-1-4 4-4-4 4-4-1-1 5-2"/>
+                  <path d="M17 3l4 4-9 9-4-4 9-9z"/>
+                </svg>
+              </div>
+              <div class="stat-info">
+                <span class="stat-value" id="statTotalAdmins">0</span>
+                <span class="stat-label">Admins</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon blocked">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                </svg>
+              </div>
+              <div class="stat-info">
+                <span class="stat-value" id="statBlockedUsers">0</span>
+                <span class="stat-label">Blocked</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon credits">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+              </div>
+              <div class="stat-info">
+                <span class="stat-value" id="statTotalCredits">0</span>
+                <span class="stat-label">Credits in System</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- User Management -->
+          <div class="admin-section-card">
+            <div class="section-header">
+              <h3>User Management</h3>
+              <button id="refreshUsersBtn" class="nav-btn outline" style="padding: 0.5rem 1rem; font-size: 0.8rem;">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"/>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                Refresh
+              </button>
+            </div>
+            
+            <div id="adminUsersList" class="admin-users-list">
+              <div class="loading-users">Loading users...</div>
+            </div>
+          </div>
+          
+          <!-- Quick Actions -->
+          <div class="admin-section-card">
+            <h3>Quick Actions</h3>
+            <div class="quick-actions-grid">
+              <div class="quick-action-item">
+                <label>User ID or Username</label>
+                <input type="text" id="quickActionUserInput" placeholder="Enter Firebase UID or username" class="setting-input">
+              </div>
+              <div class="quick-action-item">
+                <label>Credits Amount</label>
+                <input type="number" id="quickActionCreditsAmount" placeholder="5" min="0" class="setting-input" style="width: 100px;">
+              </div>
+              <div class="quick-action-buttons">
+                <button id="quickAddCreditsBtn" class="action-btn add">+ Add Credits</button>
+                <button id="quickSetCreditsBtn" class="action-btn set">Set Credits</button>
+                <button id="quickResetCreditsBtn" class="action-btn reset">Reset to 0</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Pricing Section -->
+
+      <section id="pricingSection" class="pricing-section hidden">
+        <div id="pricingRedirectBanner" class="credit-warning-banner hidden" style="margin-bottom: 2rem; width: 100%; border-radius: 12px; max-width: 1100px;">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="3">
+            <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          Whoops! You've used all your credits. Please pick a plan to keep creating.
+        </div>
+        <div class="pricing-container">
+          <div class="pricing-header">
+            <h2>Out of Credits?</h2>
+            <p>Upgrade to a pro plan to keep creating masterpieces</p>
+          </div>
+          <div class="pricing-grid">
+            <!-- Free Plan -->
+            <div class="pricing-card">
+              <div class="plan-name">Free Trial</div>
+              <div class="plan-price">$0<span>/one-time</span></div>
+              <ul class="plan-features">
+                <li>5 Generations</li>
+                <li>Standard Quality</li>
+                <li>Community Access</li>
+              </ul>
+              <button class="plan-btn disabled">Current Plan</button>
+            </div>
+            <!-- Pro Plan -->
+            <div class="pricing-card popular">
+              <div class="popular-tag">Most Popular</div>
+              <div class="plan-name">Pro Studio</div>
+              <div class="plan-price">$19<span>/month</span></div>
+              <ul class="plan-features">
+                <li>Unlimited Generations</li>
+                <li>Ultra HD Quality</li>
+                <li>Commercial License</li>
+                <li>Priority Support</li>
+              </ul>
+              <button class="plan-btn buy-btn" data-plan="Pro">Upgrade to Pro</button>
+            </div>
+            <!-- Enterprise Plan -->
+            <div class="pricing-card">
+              <div class="plan-name">Elite Artist</div>
+              <div class="plan-price">$49<span>/month</span></div>
+              <ul class="plan-features">
+                <li>Custom AI Models</li>
+                <li>API Access</li>
+                <li>Dedicated Server</li>
+                <li>Team Collaboration</li>
+              </ul>
+              <button class="plan-btn buy-btn" data-plan="Elite">Go Elite</button>
+            </div>
+          </div>
+          <button class="back-link" onclick="showSection('landing')">Return to Home</button>
+        </div>
+      </section>
+
+      <!-- AI Chat Section -->
+      <section id="chatSection" class="chat-section hidden">
+        <div class="chat-header">
+          <div class="chat-header-container">
+            <div class="chat-header-info">
+              <div class="chat-avatar">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+              </div>
+              <div class="chat-header-text">
+                <h2>AI Assistant</h2>
+              </div>
+            </div>
+            <div class="chat-header-actions">
+              <button id="newChatBtn" class="chat-action-btn" title="New Chat">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
+                <span>New Chat</span>
+              </button>
+              <button id="chatHistoryBtn" class="chat-action-btn" title="Chat History">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span>History</span>
+              </button>
+              <button id="goToGeneratorBtn" class="chat-action-btn generate" title="Generate Image">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <path d="M21 15L16 10L5 21"/>
+                </svg>
+                <span>Generate Image</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Chat History Sidebar -->
+        <div id="chatHistorySidebar" class="chat-history-sidebar hidden">
+          <div class="sidebar-header" id="chatSidebarHeader">
+            <button id="closeSidebarBtn" class="close-sidebar-btn left" aria-label="Close chat history">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 6L6 18M6 6l12 12"/>
+              </svg>
+            </button>
+            <h3>Chat History</h3>
+            <button id="collapseSidebarBtn" class="collapse-sidebar-btn" aria-label="Collapse chat history">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
+          </div>
+          
+          <!-- Loading State -->
+          <div id="chatHistoryLoading" class="chat-history-loading">
+            <div class="chat-history-skeleton">
+              <div class="skeleton-item"></div>
+              <div class="skeleton-item"></div>
+              <div class="skeleton-item"></div>
+              <div class="skeleton-item"></div>
+              <div class="skeleton-item"></div>
+            </div>
+            <p class="loading-text">Loading your chats...</p>
+          </div>
+          
+          <!-- History List -->
+          <div class="chat-history-list" id="chatHistoryList" style="display: none;">
+            <p class="empty-history-msg">No saved chats yet. Start a conversation!</p>
+          </div>
+        </div>
+        
+        <div class="chat-main-area">
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-welcome">
+              <h3>What would you like to do?</h3>
+              <div class="quick-prompts">
+                <button class="quick-prompt-btn" data-prompt="Suggest a creative image prompt">✨ Creative prompt ideas</button>
+                <button class="quick-prompt-btn" data-prompt="What art styles work best with AI?">🎨 Best art styles</button>
+                <button class="quick-prompt-btn" data-prompt="Tips for better AI image generation">💡 Generation tips</button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="chat-typing hidden" id="chatTyping">
+            <div class="typing-indicator">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <span>AI is thinking...</span>
+          </div>
+          
+          <div class="chat-input-container">
+            <div class="chat-input-wrapper">
+              <textarea id="chatInput" class="chat-input" placeholder="Ask me anything..." rows="1"></textarea>
+              <button id="sendChatBtn" class="send-chat-btn" disabled>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                </svg>
+              </button>
+            </div>
+            <p class="chat-disclaimer">AI responses are generated and may not always be accurate.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Main Content (Generator) -->
+      <main id="generatorSection" class="generator-main hidden">
+        <div id="usernameWarningBanner" class="credit-warning-banner hidden" style="background: linear-gradient(90deg, #f59e0b 0%, #dc2626 100%); border-bottom: 2px solid rgba(255,255,255,0.1); padding: 1rem 2rem;">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="3" style="margin-right: 12px;">
+            <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          Whoops! You haven't set a unique username yet. Please set one in your profile to secure your account and unlock admin features.
+        </div>
+        <div id="creditWarningBanner" class="credit-warning-banner hidden">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3">
+            <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          Warning: You have 0 credits remaining. Upgrade to continue generating.
+        </div>
+        <div class="generator-split-layout">
+          <!-- Left Column: Controls -->
+          <div class="generator-sidebar">
+            <div class="generator-card-modern">
+              <div class="card-header-modern">
+                <div class="header-top">
+                  <h2>Create Art</h2>
+                  <button id="randomPromptBtn" class="surprise-btn">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z"/>
+                    </svg>
+                    Surprise Me
+                  </button>
+                </div>
+                <p>Describe your vision below</p>
+              </div>
+
+              <div class="input-section-modern">
+                <div class="input-wrapper-modern">
+                  <textarea id="promptInput" class="prompt-input-modern" placeholder="A majestic dragon soaring through aurora borealis..." rows="5"></textarea>
+                </div>
+
+                <div class="generator-options-modern">
+                  <div class="option-group-modern">
+                    <label>Aspect Ratio</label>
+                    <div class="custom-dropdown" id="ratioDropdown">
+                      <div class="dropdown-selected" data-value="1:1">1:1 Square</div>
+                      <div class="dropdown-options">
+                        <div class="dropdown-option selected" data-value="1:1">1:1 Square</div>
+                        <div class="dropdown-option" data-value="16:9">16:9 Cinematic</div>
+                        <div class="dropdown-option" data-value="9:16">9:16 Portrait</div>
+                        <div class="dropdown-option" data-value="4:3">4:3 Classic</div>
+                        <div class="dropdown-option" data-value="21:9">21:9 Ultrawide</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <button id="generateBtn" class="generate-btn-modern">
+                  <span class="btn-text">Generate Image</span>
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                    <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z"/>
+                  </svg>
+                </button>
+              </div>
+
+              <div class="auth-notice-modern">
+                <p>Enterprise AI Engine Active</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Visual Result -->
+          <div class="generator-visual">
+            <div id="imageContainer" class="image-container-modern">
+              <div id="placeholder" class="placeholder-modern">
+                <div class="placeholder-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48" opacity="0.3">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15L16 10L5 21"/>
+                  </svg>
+                </div>
+                <p>Your artwork will appear here</p>
+              </div>
+
+              <div id="loadingState" class="loading-state-modern hidden">
+                <div class="loader-modern"></div>
+                <p>Generating Masterpiece...</p>
+              </div>
+
+              <div id="imageDisplay" class="image-display-modern hidden"></div>
+            </div>
+
+            <div id="downloadContainer" class="download-container-modern hidden">
+              <a id="downloadBtn" href="#" class="download-btn-modern" download="tech-image.png">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                </svg>
+                Download Masterpiece
+              </a>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Footer -->
+      <footer class="footer">
+        <p>© 2026 Tech-Image AI | Powered by <strong>Flux.2 Klein</strong></p>
+        <p class="footer-disclaimer">AI responses are generated and may not always be accurate.</p>
+      </footer>
+    </div>
+
+    <!-- Scripts -->
+    <script type="module" src="script.js"></script>
+  </body>
+</html>

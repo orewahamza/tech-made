@@ -1,0 +1,590 @@
+import express from 'express';
+import cors from 'cors';
+import fetch from 'node-fetch';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: '10mb' })); // Increased limit for base64 images
+app.use(express.static(__dirname));
+
+
+
+// MongoDB Connection (set MONGODB_URI in .env; do not commit real credentials)
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI || MONGODB_URI.includes('<db_password>')) {
+    console.warn('⚠️ MONGODB_URI missing or has placeholder. Set it in .env to enable database.');
+}
+if (MONGODB_URI && !MONGODB_URI.includes('<')) {
+    mongoose.connect(MONGODB_URI)
+        .then(() => console.log('✅ Connected to MongoDB Atlas'))
+        .catch(err => console.error('❌ MongoDB Connection Error:', err));
+}
+
+// Dev-only health and debug endpoints to help diagnose API availability
+app.get('/api/health', (req, res) => {
+    res.json({ success: true, message: 'API OK' });
+});
+
+// Dev debug: return user count and sample list (ONLY enabled in non-production)
+if (process.env.NODE_ENV !== 'production') {
+    app.get('/api/debug/users', async (req, res) => {
+        try {
+            const totalUsers = await User.countDocuments();
+            const users = await User.find({}, { firebaseUid: 1, displayName: 1, userType: 1 }).limit(20).sort({ createdAt: -1 });
+            res.json({ success: true, totalUsers, users });
+        } catch (e) {
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
+}
+
+// Public (localhost-only) endpoint to return user count when admin APIs are unreachable
+app.get('/api/public/users/count', async (req, res) => {
+    try {
+        const host = req.hostname || req.ip || '';
+        // Only allow from localhost for safety
+        if (!['localhost', '127.0.0.1'].some(h => host.includes(h))) {
+            return res.status(403).json({ success: false, error: 'Forbidden' });
+        }
+        const totalUsers = await User.countDocuments();
+        res.json({ success: true, totalUsers });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// MongoDB Schemas
+const userSchema = new mongoose.Schema({
+    firebaseUid: { type: String, required: true, unique: true },
+    displayName: String,
+    photoURL: String,
+    username: { type: String, unique: true, sparse: true }, // Unique username for admin commands
+    userType: { type: String, enum: ['user', 'admin'], default: 'user' }, // User role
+    isBlocked: { type: Boolean, default: false }, // Block status
+    history: [{
+        prompt: String,
+        imageUrl: String,
+        date: { type: Date, default: Date.now }
+    }],
+    settings: {
+        aiTraining: { type: Boolean, default: true },
+        notifications: { type: Boolean, default: true }
+    },
+    credits: { type: Number, default: 5 },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const User = mongoose.model('User', userSchema);
+
+// OpenRouter Config
+const OPENROUTER_CONFIG = {
+    apiKey: process.env.OPENROUTER_API_KEY,
+    model: "black-forest-labs/flux.2-max",
+    url: "https://openrouter.ai/api/v1/chat/completions"
+};
+
+/**
+ * 🎨 API: Generate Image
+ */
+app.post('/api/generate', async (req, res) => {
+    const { prompt, userId, model, ratio } = req.body;
+    
+    if (!prompt) return res.status(400).json({ success: false, error: 'Prompt is required' });
+
+    try {
+        // 1. Check Credits first if logged in
+        if (userId) {
+            const user = await User.findOne({ firebaseUid: userId });
+            if (!user || user.credits === undefined || user.credits <= 0) {
+                return res.status(403).json({ success: false, error: 'Insufficient credits' });
+            }
+        }
+
+        const targetModel = model || OPENROUTER_CONFIG.model;
+        const finalPrompt = ratio ? `${prompt} --ar ${ratio}` : prompt;
+
+        // High-compatibility request format
+        const response = await fetch(OPENROUTER_CONFIG.url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${OPENROUTER_CONFIG.apiKey}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': 'http://localhost:3000',
+                'X-Title': 'Tech-Image AI Studio'
+            },
+            body: JSON.stringify({
+                model: targetModel,
+                messages: [
+                    {
+                        role: "user",
+                        content: `Generate a ultra-high-definition professional image of: ${finalPrompt}`
+                    }
+                ],
+                modalities: ["image"]
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.error) {
+            console.error('OpenRouter Error Body:', JSON.stringify(data.error, null, 2));
+            return res.status(data.error.code || 500).json({ 
+                success: false, 
+                error: data.error.message || 'AI Generation Engine Error' 
+            });
+        }
+        
+        // Comprehensive Extraction Logic
+        let imageUrl = null;
+        const message = data.choices?.[0]?.message;
+
+        // Strategy A: Standard Images Array
+        imageUrl = message?.images?.[0]?.url || message?.images?.[0]?.image_url?.url;
+        
+        // Strategy B: OpenAI Data Array
+        if (!imageUrl && data.data?.[0]?.url) {
+            imageUrl = data.data[0].url;
+        }
+
+        // Strategy C: Markdown/Plaintext URL Detection
+        if (!imageUrl && message?.content) {
+            const urlMatch = message.content.match(/https?:\/\/[^\s)]+\.(?:png|jpe?g|gif|webp)(?:\?\S*)?/i);
+            if (urlMatch) imageUrl = urlMatch[0];
+            else {
+                // Last ditch effort: find any http link
+                const fallbackMatch = message.content.match(/https?:\/\/[^\s)]+/);
+                if (fallbackMatch) imageUrl = fallbackMatch[0].replace(/[()]/g, '');
+            }
+        }
+
+        if (imageUrl) {
+            // Save to MongoDB and DEDUCT credit in one go
+            if (userId) {
+                const updatedUser = await User.findOneAndUpdate(
+                    { firebaseUid: userId, credits: { $gt: 0 } },
+                    { 
+                        $push: { history: { $each: [{ prompt, imageUrl }], $position: 0, $slice: 20 } },
+                        $inc: { credits: -1 }
+                    },
+                    { new: true }
+                );
+
+                if (!updatedUser) {
+                    return res.status(403).json({ success: false, error: 'Insufficient credits' });
+                }
+                return res.json({ success: true, imageUrl, credits: updatedUser.credits });
+            }
+            return res.json({ success: true, imageUrl });
+        } else {
+            console.error('Extraction Failed. Full Data Received:', JSON.stringify(data, null, 2));
+            return res.status(500).json({ 
+                success: false, 
+                error: '[Tech-Image] The AI model responded but No image URL was found. Please try again or change the prompt.' 
+            });
+        }
+    } catch (error) {
+        console.error('Fatal API Error:', error);
+        res.status(500).json({ success: false, error: 'Lost connection to AI engine. Check your internet or API key balance.' });
+    }
+});
+
+/**
+ * 💬 API: Chat with AI (Text Generation)
+ */
+app.post('/api/chat', async (req, res) => {
+    const { message, history = [], userId } = req.body;
+    
+    if (!message) return res.status(400).json({ success: false, error: 'Message is required' });
+
+    try {
+        // Build conversation messages from history
+        const messages = [
+            {
+                role: "system",
+                content: "You are a helpful, friendly AI assistant on Tech-Image, an AI image generation platform. You can help users with their questions, provide creative suggestions for image prompts, discuss art and technology, and assist with general inquiries. Be conversational, helpful, and engaging. Keep responses concise but informative."
+            },
+            ...history.map(msg => ({
+                role: msg.role,
+                content: msg.content
+            })),
+            {
+                role: "user",
+                content: message
+            }
+        ];
+
+        const response = await fetch(OPENROUTER_CONFIG.url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${OPENROUTER_CONFIG.apiKey}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': 'http://localhost:3000',
+                'X-Title': 'Tech-Image AI Chat'
+            },
+            body: JSON.stringify({
+                // Chat model (free tier) via OpenRouter
+                model: "openai/gpt-oss-120b:free",
+                messages: messages,
+                max_tokens: 1024,
+                temperature: 0.7
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.error) {
+            console.error('Chat API Error:', JSON.stringify(data.error, null, 2));
+            return res.status(data.error.code || 500).json({ 
+                success: false, 
+                error: data.error.message || 'Chat AI Engine Error' 
+            });
+        }
+
+        const aiResponse = data.choices?.[0]?.message?.content;
+        
+        if (aiResponse) {
+            return res.json({ 
+                success: true, 
+                response: aiResponse,
+                model: "openai/gpt-oss-120b:free"
+            });
+        } else {
+            console.error('No response content:', JSON.stringify(data, null, 2));
+            return res.status(500).json({ 
+                success: false, 
+                error: 'AI did not generate a response. Please try again.' 
+            });
+        }
+    } catch (error) {
+        console.error('Chat API Fatal Error:', error);
+        res.status(500).json({ success: false, error: 'Lost connection to chat AI. Check your internet connection.' });
+    }
+});
+
+/**
+ * 👤 API: Sync User Data
+ */
+app.post('/api/user/sync', async (req, res) => {
+    const { uid, displayName, photoURL } = req.body;
+    try {
+        // First, ensure existing users don't have negative credits
+        await User.updateOne(
+            { firebaseUid: uid, credits: { $lt: 0 } },
+            { $set: { credits: 0 } }
+        );
+
+        const user = await User.findOneAndUpdate(
+            { firebaseUid: uid },
+            { 
+                $setOnInsert: { 
+                    displayName, 
+                    photoURL, 
+                    credits: 5,
+                    userType: 'user',
+                    isBlocked: false,
+                    createdAt: new Date()
+                } 
+            },
+            { upsert: true, new: true }
+        );
+
+        // Triple-safety: Clamp credits in the response object
+        if (user && user.credits < 0) {
+            user.credits = 0;
+        }
+
+        res.json({ success: true, user });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * 🛠️ API: Update Profile
+ */
+app.post('/api/user/update', async (req, res) => {
+    const { uid, displayName, photoURL } = req.body;
+    try {
+        const user = await User.findOneAndUpdate(
+            { firebaseUid: uid },
+            { displayName, photoURL },
+            { new: true }
+        );
+        res.json({ success: true, user });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * ⚙️ API: Update Settings
+ */
+app.post('/api/user/settings', async (req, res) => {
+    const { uid, settings } = req.body;
+    try {
+        const user = await User.findOneAndUpdate(
+            { firebaseUid: uid },
+            { settings },
+            { new: true }
+        );
+        res.json({ success: true, user });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * 💰 API: Deduct Credit
+ */
+app.post('/api/user/credits/deduct', async (req, res) => {
+    const { uid } = req.body;
+    try {
+        const user = await User.findOneAndUpdate(
+            { firebaseUid: uid, credits: { $gt: 0 } },
+            { $inc: { credits: -1 } },
+            { new: true }
+        );
+        if (!user) {
+            return res.status(403).json({ success: false, error: 'Insufficient credits' });
+        }
+        res.json({ success: true, credits: user.credits });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * 📜 API: Get History
+ */
+app.get('/api/user/history/:uid', async (req, res) => {
+    try {
+        const user = await User.findOne({ firebaseUid: req.params.uid });
+        res.json({ 
+            success: true, 
+            history: user?.history || [], 
+            settings: user?.settings,
+            credits: Math.max(0, user?.credits ?? 5),
+            username: user?.username,
+            userType: user?.userType || 'user'
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * 🔖 API: Check Username Availability
+ */
+app.get('/api/user/check-username/:username', async (req, res) => {
+    try {
+        const existing = await User.findOne({ username: req.params.username.toLowerCase() });
+        res.json({ success: true, available: !existing });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * 🔖 API: Set Username (One-time only)
+ */
+app.post('/api/user/set-username', async (req, res) => {
+    const { uid, username } = req.body;
+    try {
+        const user = await User.findOne({ firebaseUid: uid });
+        if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+        if (user.username) return res.status(400).json({ success: false, error: 'Username already set. It cannot be changed.' });
+        
+        const cleanUsername = username.toLowerCase().trim();
+        if (!/^[a-z0-9_]{3,20}$/.test(cleanUsername)) {
+            return res.status(400).json({ success: false, error: 'Username must be 3-20 characters, lowercase letters, numbers, and underscores only.' });
+        }
+        
+        const existing = await User.findOne({ username: cleanUsername });
+        if (existing) return res.status(400).json({ success: false, error: 'Username is already taken.' });
+        
+        user.username = cleanUsername;
+        await user.save();
+        res.json({ success: true, username: user.username });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * 🛡️ API: Get User Info (for admin check)
+ */
+app.get('/api/user/info/:uid', async (req, res) => {
+    try {
+        const user = await User.findOne({ firebaseUid: req.params.uid });
+        if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+        res.json({ 
+            success: true, 
+            userType: user.userType || 'user',
+            username: user.username,
+            isBlocked: user.isBlocked || false
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// ==================== ADMIN APIs ====================
+
+/**
+ * 🛡️ Middleware: Check if user is admin
+ */
+async function isAdmin(req, res, next) {
+    const adminUid = req.headers['x-admin-uid'];
+    if (!adminUid) return res.status(401).json({ success: false, error: 'Unauthorized' });
+    
+    const admin = await User.findOne({ firebaseUid: adminUid });
+    if (!admin || admin.userType !== 'admin') {
+        return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    req.admin = admin;
+    next();
+}
+
+/**
+ * 📊 API: Admin Dashboard Stats
+ */
+app.get('/api/admin/stats', isAdmin, async (req, res) => {
+    try {
+        const totalUsers = await User.countDocuments();
+        const totalAdmins = await User.countDocuments({ userType: 'admin' });
+        const blockedUsers = await User.countDocuments({ isBlocked: true });
+        const totalCreditsUsed = await User.aggregate([
+            { $group: { _id: null, total: { $sum: '$credits' } } }
+        ]);
+        console.log('Admin stats computed:', { totalUsers, totalAdmins, blockedUsers, totalCreditsInSystem: totalCreditsUsed[0]?.total || 0 });
+        res.json({ 
+            success: true, 
+            stats: {
+                totalUsers,
+                totalAdmins,
+                blockedUsers,
+                totalCreditsInSystem: totalCreditsUsed[0]?.total || 0
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * 📋 API: Get All Users (Admin)
+ */
+app.get('/api/admin/users', isAdmin, async (req, res) => {
+    try {
+        const users = await User.find({}, {
+            firebaseUid: 1,
+            displayName: 1,
+            username: 1,
+            userType: 1,
+            credits: 1,
+            isBlocked: 1,
+            createdAt: 1,
+            photoURL: 1
+        }).sort({ createdAt: -1 });
+        
+        res.json({ success: true, users });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * 🚫 API: Block/Unblock User
+ */
+app.post('/api/admin/user/block', isAdmin, async (req, res) => {
+    const { targetUid, block } = req.body;
+    try {
+        const user = await User.findOneAndUpdate(
+            { firebaseUid: targetUid },
+            { isBlocked: block },
+            { new: true }
+        );
+        if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+        res.json({ success: true, isBlocked: user.isBlocked });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * 🗑️ API: Delete User
+ */
+app.post('/api/admin/user/delete', isAdmin, async (req, res) => {
+    const { targetUid } = req.body;
+    try {
+        const result = await User.deleteOne({ firebaseUid: targetUid });
+        if (result.deletedCount === 0) return res.status(404).json({ success: false, error: 'User not found' });
+        res.json({ success: true, message: 'User deleted' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * 💰 API: Modify User Credits
+ */
+app.post('/api/admin/user/credits', isAdmin, async (req, res) => {
+    const { targetUid, action, amount } = req.body;
+    try {
+        let update;
+        if (action === 'add') update = { $inc: { credits: amount } };
+        else if (action === 'set') update = { $set: { credits: Math.max(0, amount) } };
+        else if (action === 'reset') update = { $set: { credits: 0 } };
+        else return res.status(400).json({ success: false, error: 'Invalid action' });
+        
+        const user = await User.findOneAndUpdate({ firebaseUid: targetUid }, update, { new: true });
+        if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+        res.json({ success: true, credits: user.credits });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * 👑 API: Promote to Admin
+ */
+app.post('/api/admin/user/promote', isAdmin, async (req, res) => {
+    const { targetUid } = req.body;
+    try {
+        const user = await User.findOneAndUpdate(
+            { firebaseUid: targetUid },
+            { userType: 'admin' },
+            { new: true }
+        );
+        if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+        res.json({ success: true, userType: user.userType });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// ========= SPA Fallback =========
+// Allow clean client-side routes like /home, /chat, /image-generations, etc.
+// Any non-API route that isn't a static asset will serve index.html
+app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ success: false, error: 'API route not found' });
+    }
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+app.listen(PORT, () => {
+    console.log(`🚀 Tech-Image Server at http://localhost:${PORT}`);
+});
