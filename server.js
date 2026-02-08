@@ -14,16 +14,28 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Initialize Firebase Admin
-// Note: You should place your serviceAccountKey.json in the project root
 try {
-    const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
-    const serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-    });
-    console.log('✅ Firebase Admin Initialized');
+    let serviceAccount;
+    
+    // 1. Try to load from environment variable (Best for Hosting like Render)
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        console.log('✅ Firebase Admin Initialized via Environment Variable');
+    } 
+    // 2. Fallback to local file (Best for Local Development)
+    else {
+        const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
+        serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
+        console.log('✅ Firebase Admin Initialized via local file');
+    }
+
+    if (serviceAccount) {
+        admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount)
+        });
+    }
 } catch (error) {
-    console.warn('⚠️ Firebase Admin initialization failed. Admin routes and token verification will be disabled until serviceAccountKey.json is provided.');
+    console.warn('⚠️ Firebase Admin initialization failed.');
     console.error('Error details:', error.message);
 }
 
