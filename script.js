@@ -1,5 +1,5 @@
 /**
- * Tech-Image AI - Frontend Script (MongoDB Integrated & UI Optimized)
+ * tech-made AI - Frontend Script (MongoDB Integrated & UI Optimized)
  */
 
 import { 
@@ -508,7 +508,7 @@ function renderHistory(history) {
             </div>
             <div class="history-actions">
                 <button class="history-action-btn view-btn" onclick="openImageModal('${item.imageUrl}')">VIEW FULL</button>
-                <a href="${item.imageUrl}" download="tech-image-${Date.now()}.png" class="history-action-btn download-btn">DOWNLOAD</a>
+                <a href="${item.imageUrl}" download="tech-made-${Date.now()}.png" class="history-action-btn download-btn">DOWNLOAD</a>
             </div>
         </div>
     `).join('');
@@ -1135,7 +1135,7 @@ if (downloadBtn) {
         if (!currentImgUrl) return;
         const a = document.createElement('a');
         a.href = currentImgUrl;
-        a.download = `tech-image-${Date.now()}.png`;
+        a.download = `tech-made-${Date.now()}.png`;
         a.target = '_blank';
         a.click();
     };

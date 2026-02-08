@@ -1,5 +1,5 @@
 /**
- * Admin CLI Tool for Tech-Image
+ * Admin CLI Tool for tech-made
  * 
  * Usage:
  *   node admin-cli.js make-admin <username>   - Make a user an admin
@@ -183,7 +183,7 @@ async function main() {
     
     if (!command) {
         console.log(`
-🛠️  TECH-IMAGE ADMIN CLI
+🛠️  tech-made ADMIN CLI
 ========================
 
 Usage:

@@ -165,7 +165,7 @@ app.post('/api/generate', async (req, res) => {
                 'Authorization': `Bearer ${OPENROUTER_CONFIG.apiKey}`,
                 'Content-Type': 'application/json',
                 'HTTP-Referer': `${req.protocol}://${req.get('host')}`,
-                'X-Title': 'Tech-Image AI Studio'
+                'X-Title': 'tech-made AI Studio'
             },
             body: JSON.stringify({
                 model: targetModel,
@@ -238,7 +238,7 @@ app.post('/api/generate', async (req, res) => {
             console.error('Extraction Failed. Full Data Received:', JSON.stringify(data, null, 2));
             return res.status(500).json({ 
                 success: false, 
-                error: '[Tech-Image] The AI model responded but No image URL was found. Please try again or change the prompt.' 
+                error: '[tech-made] The AI model responded but No image URL was found. Please try again or change the prompt.' 
             });
         }
     } catch (error) {
@@ -264,7 +264,7 @@ app.post('/api/chat', async (req, res) => {
         const messages = [
             {
                 role: "system",
-                content: "You are a helpful, friendly AI assistant on Tech-Image, an AI image generation platform. You can help users with their questions, provide creative suggestions for image prompts, discuss art and technology, and assist with general inquiries. Be conversational, helpful, and engaging. Keep responses concise but informative."
+                content: "You are a helpful, friendly AI assistant on tech-made, an AI image generation platform. You can help users with their questions, provide creative suggestions for image prompts, discuss art and technology, and assist with general inquiries. Be conversational, helpful, and engaging. Keep responses concise but informative."
             },
             ...history.map(msg => ({
                 role: msg.role,
@@ -282,7 +282,7 @@ app.post('/api/chat', async (req, res) => {
                 'Authorization': `Bearer ${OPENROUTER_CONFIG.apiKey}`,
                 'Content-Type': 'application/json',
                 'HTTP-Referer': `${req.protocol}://${req.get('host')}`,
-                'X-Title': 'Tech-Image AI Chat'
+                'X-Title': 'tech-made AI Chat'
             },
             body: JSON.stringify({
                 // Chat model (free tier) via OpenRouter
@@ -749,5 +749,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Tech-Image Server at http://localhost:${PORT}`);
+    console.log(`🚀 tech-made Server at http://localhost:${PORT}`);
 });
