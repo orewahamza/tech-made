@@ -5,11 +5,27 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import admin from 'firebase-admin';
+import { readFileSync } from 'fs';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Initialize Firebase Admin
+// Note: You should place your serviceAccountKey.json in the project root
+try {
+    const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
+    const serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+    });
+    console.log('✅ Firebase Admin Initialized');
+} catch (error) {
+    console.warn('⚠️ Firebase Admin initialization failed. Admin routes and token verification will be disabled until serviceAccountKey.json is provided.');
+    console.error('Error details:', error.message);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -83,6 +99,15 @@ const userSchema = new mongoose.Schema({
         notifications: { type: Boolean, default: true }
     },
     credits: { type: Number, default: 5 },
+    chats: [{
+        id: String,
+        title: String,
+        messages: [{
+            role: String,
+            content: String
+        }],
+        timestamp: { type: Date, default: Date.now }
+    }],
     createdAt: { type: Date, default: Date.now }
 });
 
@@ -100,15 +125,33 @@ const OPENROUTER_CONFIG = {
  */
 app.post('/api/generate', async (req, res) => {
     const { prompt, userId, model, ratio } = req.body;
+    let user = null;
     
     if (!prompt) return res.status(400).json({ success: false, error: 'Prompt is required' });
 
     try {
-        // 1. Check Credits first if logged in
+        // 1. SECURITY FIX: Deduct credit FIRST to prevent race conditions
         if (userId) {
-            const user = await User.findOne({ firebaseUid: userId });
-            if (!user || user.credits === undefined || user.credits <= 0) {
-                return res.status(403).json({ success: false, error: 'Insufficient credits' });
+            // Find user and deduct credit, or create user with 4 credits (5 starting - 1 for this gen) if new
+            user = await User.findOneAndUpdate(
+                { firebaseUid: userId, credits: { $gt: 0 } },
+                { $inc: { credits: -1 } },
+                { new: true }
+            );
+
+            // If user doesn't exist yet in DB, create them with starting credits (minus this one)
+            if (!user) {
+                const checkUser = await User.findOne({ firebaseUid: userId });
+                if (!checkUser) {
+                    user = await User.create({
+                        firebaseUid: userId,
+                        credits: 4, // 5 starting - 1 used now
+                        userType: 'user',
+                        createdAt: new Date()
+                    });
+                } else {
+                    return res.status(403).json({ success: false, error: 'Insufficient credits or account issue' });
+                }
             }
         }
 
@@ -121,7 +164,7 @@ app.post('/api/generate', async (req, res) => {
             headers: {
                 'Authorization': `Bearer ${OPENROUTER_CONFIG.apiKey}`,
                 'Content-Type': 'application/json',
-                'HTTP-Referer': 'http://localhost:3000',
+                'HTTP-Referer': `${req.protocol}://${req.get('host')}`,
                 'X-Title': 'Tech-Image AI Studio'
             },
             body: JSON.stringify({
@@ -139,10 +182,15 @@ app.post('/api/generate', async (req, res) => {
         const data = await response.json();
         
         if (data.error) {
-            console.error('OpenRouter Error Body:', JSON.stringify(data.error, null, 2));
+            // REFUND credit if AI fails
+            if (userId) {
+                await User.updateOne({ firebaseUid: userId }, { $inc: { credits: 1 } });
+            }
+            console.error('OpenRouter Error:', JSON.stringify(data.error, null, 2));
+            const errMsg = data.error.message || 'AI Generation Engine Error';
             return res.status(data.error.code || 500).json({ 
                 success: false, 
-                error: data.error.message || 'AI Generation Engine Error' 
+                error: `[AI Engine] ${errMsg}` 
             });
         }
         
@@ -170,24 +218,23 @@ app.post('/api/generate', async (req, res) => {
         }
 
         if (imageUrl) {
-            // Save to MongoDB and DEDUCT credit in one go
+            // Save to history (credit was already deducted)
             if (userId) {
                 const updatedUser = await User.findOneAndUpdate(
-                    { firebaseUid: userId, credits: { $gt: 0 } },
+                    { firebaseUid: userId },
                     { 
-                        $push: { history: { $each: [{ prompt, imageUrl }], $position: 0, $slice: 20 } },
-                        $inc: { credits: -1 }
+                        $push: { history: { $each: [{ prompt, imageUrl }], $position: 0, $slice: 20 } }
                     },
                     { new: true }
                 );
-
-                if (!updatedUser) {
-                    return res.status(403).json({ success: false, error: 'Insufficient credits' });
-                }
                 return res.json({ success: true, imageUrl, credits: updatedUser.credits });
             }
             return res.json({ success: true, imageUrl });
         } else {
+            // REFUND credit if extraction fails
+            if (userId) {
+                await User.updateOne({ firebaseUid: userId }, { $inc: { credits: 1 } });
+            }
             console.error('Extraction Failed. Full Data Received:', JSON.stringify(data, null, 2));
             return res.status(500).json({ 
                 success: false, 
@@ -195,6 +242,10 @@ app.post('/api/generate', async (req, res) => {
             });
         }
     } catch (error) {
+        // REFUND credit if fatal error
+        if (userId) {
+            await User.updateOne({ firebaseUid: userId }, { $inc: { credits: 1 } });
+        }
         console.error('Fatal API Error:', error);
         res.status(500).json({ success: false, error: 'Lost connection to AI engine. Check your internet or API key balance.' });
     }
@@ -230,12 +281,12 @@ app.post('/api/chat', async (req, res) => {
             headers: {
                 'Authorization': `Bearer ${OPENROUTER_CONFIG.apiKey}`,
                 'Content-Type': 'application/json',
-                'HTTP-Referer': 'http://localhost:3000',
+                'HTTP-Referer': `${req.protocol}://${req.get('host')}`,
                 'X-Title': 'Tech-Image AI Chat'
             },
             body: JSON.stringify({
                 // Chat model (free tier) via OpenRouter
-                model: "openai/gpt-oss-120b:free",
+                model: "google/gemini-2.0-flash-exp:free",
                 messages: messages,
                 max_tokens: 1024,
                 temperature: 0.7
@@ -246,9 +297,10 @@ app.post('/api/chat', async (req, res) => {
         
         if (data.error) {
             console.error('Chat API Error:', JSON.stringify(data.error, null, 2));
+            const errMsg = data.error.message || 'Chat AI Engine Error';
             return res.status(data.error.code || 500).json({ 
                 success: false, 
-                error: data.error.message || 'Chat AI Engine Error' 
+                error: `[Chat Engine] ${errMsg}` 
             });
         }
 
@@ -285,20 +337,44 @@ app.post('/api/user/sync', async (req, res) => {
             { $set: { credits: 0 } }
         );
 
-        const user = await User.findOneAndUpdate(
-            { firebaseUid: uid },
-            { 
-                $setOnInsert: { 
-                    displayName, 
-                    photoURL, 
-                    credits: 5,
-                    userType: 'user',
-                    isBlocked: false,
-                    createdAt: new Date()
-                } 
-            },
-            { upsert: true, new: true }
-        );
+        // Find existing user record
+        const existingUser = await User.findOne({ firebaseUid: uid });
+        
+        const updateData = {};
+        
+        // 1. Name Sync: Only update from Firebase if DB name is missing
+        if (!existingUser || !existingUser.displayName) {
+            if (displayName) {
+                updateData.displayName = displayName;
+                console.log(`[Sync] Initializing Name for ${uid}: ${displayName}`);
+            }
+        }
+
+        // 2. PFP Sync: Only update from Firebase if DB photo is missing
+        if (!existingUser || !existingUser.photoURL) {
+            if (photoURL) {
+                updateData.photoURL = photoURL;
+                console.log(`[Sync] Initializing PFP for ${uid}: Found existing external image.`);
+            }
+        }
+
+        // Apply updates if any
+        let user = existingUser;
+        if (Object.keys(updateData).length > 0 || !existingUser) {
+            user = await User.findOneAndUpdate(
+                { firebaseUid: uid },
+                { 
+                    $set: updateData,
+                    $setOnInsert: { 
+                        credits: 5,
+                        userType: 'user',
+                        isBlocked: false,
+                        createdAt: new Date()
+                    } 
+                },
+                { upsert: true, new: true }
+            );
+        }
 
         // Triple-safety: Clamp credits in the response object
         if (user && user.credits < 0) {
@@ -307,6 +383,7 @@ app.post('/api/user/sync', async (req, res) => {
 
         res.json({ success: true, user });
     } catch (err) {
+        console.error('[Sync] Fatal error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });
@@ -317,13 +394,20 @@ app.post('/api/user/sync', async (req, res) => {
 app.post('/api/user/update', async (req, res) => {
     const { uid, displayName, photoURL } = req.body;
     try {
+        console.log(`[Update] Saving profile for ${uid}. Name: ${displayName}, Photo size: ${photoURL ? photoURL.length : 0} bytes`);
+        
+        const updateData = {};
+        if (displayName !== undefined) updateData.displayName = displayName;
+        if (photoURL !== undefined && photoURL !== null) updateData.photoURL = photoURL;
+
         const user = await User.findOneAndUpdate(
             { firebaseUid: uid },
-            { displayName, photoURL },
-            { new: true }
+            { $set: updateData },
+            { new: true, upsert: true }
         );
         res.json({ success: true, user });
     } catch (err) {
+        console.error('[Update] Failed to save profile:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });
@@ -377,7 +461,9 @@ app.get('/api/user/history/:uid', async (req, res) => {
             settings: user?.settings,
             credits: Math.max(0, user?.credits ?? 5),
             username: user?.username,
-            userType: user?.userType || 'user'
+            userType: user?.userType || 'user',
+            displayName: user?.displayName,
+            photoURL: user?.photoURL
         });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -440,21 +526,98 @@ app.get('/api/user/info/:uid', async (req, res) => {
     }
 });
 
+/**
+ * 💬 API: Save Chat Session
+ */
+app.post('/api/user/chats/save', async (req, res) => {
+    const { uid, session } = req.body;
+    try {
+        const user = await User.findOneAndUpdate(
+            { firebaseUid: uid },
+            { 
+                $setOnInsert: { credits: 5, userType: 'user', createdAt: new Date() }
+            },
+            { upsert: true, new: true }
+        );
+
+        // Update existing session or add new one
+        const sessionIndex = user.chats.findIndex(s => s.id === session.id);
+        if (sessionIndex >= 0) {
+            user.chats[sessionIndex] = session;
+        } else {
+            user.chats.unshift(session);
+            if (user.chats.length > 20) user.chats = user.chats.slice(0, 20);
+        }
+
+        await user.save();
+        res.json({ success: true, chats: user.chats });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * 💬 API: Delete Chat Session
+ */
+app.post('/api/user/chats/delete', async (req, res) => {
+    const { uid, sessionId } = req.body;
+    try {
+        const user = await User.findOneAndUpdate(
+            { firebaseUid: uid },
+            { $pull: { chats: { id: sessionId } } },
+            { new: true }
+        );
+        res.json({ success: true, chats: user.chats });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/**
+ * 💬 API: Get Chat Sessions
+ */
+app.get('/api/user/chats/:uid', async (req, res) => {
+    try {
+        const user = await User.findOne({ firebaseUid: req.params.uid });
+        res.json({ success: true, chats: user?.chats || [] });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // ==================== ADMIN APIs ====================
 
 /**
  * 🛡️ Middleware: Check if user is admin
  */
+/**
+ * 🛡️ Middleware: Verify Firebase ID Token and check if user is admin
+ */
 async function isAdmin(req, res, next) {
-    const adminUid = req.headers['x-admin-uid'];
-    if (!adminUid) return res.status(401).json({ success: false, error: 'Unauthorized' });
-    
-    const admin = await User.findOne({ firebaseUid: adminUid });
-    if (!admin || admin.userType !== 'admin') {
-        return res.status(403).json({ success: false, error: 'Admin access required' });
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ success: false, error: 'No token provided' });
     }
-    req.admin = admin;
-    next();
+
+    const idToken = authHeader.split('Bearer ')[1];
+
+    try {
+        // Verify the ID token using Firebase Admin
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const firebaseUid = decodedToken.uid;
+
+        // Check user type in MongoDB
+        const user = await User.findOne({ firebaseUid });
+        if (!user || user.userType !== 'admin') {
+            return res.status(403).json({ success: false, error: 'Admin access required' });
+        }
+
+        req.admin = user;
+        next();
+    } catch (error) {
+        console.error('Token verification failed:', error.message);
+        return res.status(401).json({ success: false, error: 'Unauthorized or invalid token' });
+    }
 }
 
 /**

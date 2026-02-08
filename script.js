@@ -12,6 +12,47 @@ import {
 
 import { updateProfile } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
+/**
+ * Elegant Toast Notifications
+ */
+function showToast(message, type = 'success', duration = 4000) {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    
+    let icon = '';
+    if (type === 'success') {
+        icon = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
+    } else if (type === 'error') {
+        icon = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+    } else if (type === 'warning') {
+        icon = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+    }
+
+    toast.innerHTML = `
+        <div class="toast-icon">${icon}</div>
+        <div class="toast-message">${message}</div>
+    `;
+
+    container.appendChild(toast);
+
+    const removeToast = () => {
+        toast.classList.add('removing');
+        toast.addEventListener('animationend', () => { toast.remove(); });
+    };
+
+    const timeout = setTimeout(removeToast, duration);
+    toast.onclick = () => {
+        clearTimeout(timeout);
+        removeToast();
+    };
+}
+
+
+const profileTrigger = document.getElementById('profileTrigger');
+
 // DOM Elements - Navigation
 const navLoginBtn = document.getElementById('navLoginBtn');
 const navGenerateLink = document.getElementById('navGenerateLink');
@@ -301,10 +342,13 @@ async function loadProfileData() {
             const data = await res.json();
             
             if (data.success) {
-                // Update basic profile info
-                displayNameInput.value = data.user?.displayName || user.displayName || "";
-                pendingBase64Pfp = data.user?.photoURL || user.photoURL || null;
-                updatePfpUI(pendingBase64Pfp, displayNameInput.value);
+                // Update basic profile info from DB, fallback to Firebase
+                const dbName = data.displayName || user.displayName || "";
+                const dbPfp = data.photoURL || user.photoURL || null;
+                
+                if (displayNameInput) displayNameInput.value = dbName;
+                pendingBase64Pfp = dbPfp;
+                updatePfpUI(dbPfp, dbName);
                 
                 // Update Credits
                 if (data.credits !== undefined) {
@@ -372,6 +416,7 @@ async function handleSaveProfile() {
         await updateProfile(user, { displayName: newName });
         
         // 2. Update MongoDB
+        console.log(`[UpdateProfile] Sending to MongoDB. Name: ${newName}, CustomPFP: ${!!newPfp}`);
         const res = await fetch('/api/user/update', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -379,10 +424,11 @@ async function handleSaveProfile() {
         });
         
         const data = await res.json();
+        console.log(`[UpdateProfile] Response:`, data);
         if (data.success) {
             userNameDisplay.textContent = newName;
             updatePfpUI(newPfp, newName);
-            alert("Profile updated successfully!");
+            showToast("Profile updated successfully!");
             showSection('generator');
         }
     } catch (e) {
@@ -453,14 +499,16 @@ function renderHistory(history) {
 
     historyList.innerHTML = history.map(item => `
         <div class="history-item">
-            <img src="${item.imageUrl}" class="history-img" alt="Gen Art">
-            <div class="history-details">
-                <p class="history-prompt">"${item.prompt}"</p>
-                <span class="history-date">${new Date(item.date).toLocaleString()}</span>
-                <div style="margin-top: 10px;">
-                    <button class="nav-btn" style="padding: 5px 15px; font-size: 0.8rem; background: var(--gradient-luxury); border:none; border-radius:4px; color:white; cursor:pointer;" onclick="window.open('${item.imageUrl}', '_blank')">View Full</button>
-                    <a href="${item.imageUrl}" download="tech-image-${Date.now()}.png" class="nav-btn" style="padding: 5px 15px; font-size: 0.8rem; text-decoration:none; margin-left:10px; background: rgba(255,255,255,0.1); border-radius:4px; color:white;">Download</a>
+            <div class="history-content">
+                <img src="${item.imageUrl}" class="history-img" alt="Gen Art">
+                <div class="history-details">
+                    <p class="history-prompt">"${item.prompt}"</p>
+                    <span class="history-date">${new Date(item.date).toLocaleString()}</span>
                 </div>
+            </div>
+            <div class="history-actions">
+                <button class="history-action-btn view-btn" onclick="openImageModal('${item.imageUrl}')">VIEW FULL</button>
+                <a href="${item.imageUrl}" download="tech-image-${Date.now()}.png" class="history-action-btn download-btn">DOWNLOAD</a>
             </div>
         </div>
     `).join('');
@@ -498,7 +546,12 @@ onAuthStateChanged(auth, async (user) => {
             const finalName = data.user?.displayName || user.displayName || tempName;
             const finalPfp = data.user?.photoURL || user.photoURL; // This would be the base64 from MongoDB
             
+            console.log(`[AuthSync] Applying PFP. Source: ${data.user?.photoURL ? 'MongoDB' : 'Firebase'}. Type: ${finalPfp?.startsWith('data:image') ? 'Custom/Base64' : 'External/URL'}`);
+            
             userNameDisplay.textContent = finalName;
+            if (displayNameInput) displayNameInput.value = finalName;
+            pendingBase64Pfp = finalPfp;
+            
             // Step 2: Update with the actual PFP once fetched
             updatePfpUI(finalPfp, finalName);
 
@@ -546,7 +599,7 @@ onAuthStateChanged(auth, async (user) => {
             
             // Check if user is blocked
             if (isBlocked) {
-                alert('Your account has been suspended. Please contact support.');
+                showToast('Your account has been suspended. Please contact support.', 'error', 10000);
                 signOut(auth);
                 return;
             }
@@ -579,6 +632,7 @@ onAuthStateChanged(auth, async (user) => {
         if (mobileAdminBtn) mobileAdminBtn.classList.add('hidden');
         currentUserType = 'user';
         currentUsername = null;
+        pendingBase64Pfp = null;
         isSyncing = false;
         syncOverlay.classList.add('hidden');
         showSection('landing');
@@ -699,6 +753,25 @@ if (navChatLink) {
     };
 }
 
+// Profile Dropdown Toggle
+if (profileTrigger && userProfile) {
+    profileTrigger.onclick = (e) => {
+        e.stopPropagation();
+        userProfile.classList.toggle('open');
+    };
+}
+
+// Global click to close dropdowns
+document.addEventListener('click', (e) => {
+    // Close profile dropdown if clicking outside
+    if (userProfile && !userProfile.contains(e.target)) {
+        userProfile.classList.remove('open');
+    }
+    
+    // Close other dropdowns
+    document.querySelectorAll('.custom-dropdown').forEach(d => d.classList.remove('open'));
+});
+
 // Chat Header Action Buttons
 if (newChatBtn) {
     newChatBtn.onclick = () => {
@@ -712,90 +785,63 @@ if (newChatBtn) {
 const _hamburgerSvg = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>';
 const _closeSvg = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>';
 if (mobileNavToggle) {
-    // ensure initial icon
     if (!mobileNavToggle.innerHTML.trim()) mobileNavToggle.innerHTML = _hamburgerSvg;
-    // make it clear it's interactive
     mobileNavToggle.style.cursor = 'pointer';
-    mobileNavToggle.onclick = (e) => {
-        console.log('mobileNavToggle clicked', { 
-            mobileNavSidebarExists: !!mobileNavSidebar,
-            classList: mobileNavSidebar?.classList.toString(),
-            ariaHidden: mobileNavSidebar?.getAttribute('aria-hidden')
-        });
+    
+    // Helper to close menu
+    window.closeMobileMenu = () => {
+        mobileNavSidebar?.classList.remove('visible');
+        mobileNavSidebar?.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('mobile-nav-open');
+        mobileNavToggle.classList.remove('open');
+        mobileNavToggle.innerHTML = _hamburgerSvg; // Always stay hamburger
         
-        if (!mobileNavSidebar) {
-            console.warn('mobileNavSidebar not found in DOM');
-            return;
+        if (mobileNavBackdrop) {
+            mobileNavBackdrop.classList.remove('visible');
         }
+        
+        setTimeout(() => {
+            if (mobileNavSidebar && !mobileNavSidebar.classList.contains('visible')) {
+                mobileNavSidebar.classList.add('hidden');
+                mobileNavBackdrop?.classList.add('hidden');
+            }
+        }, 300);
+    };
 
-        const isOpen = mobileNavSidebar.classList.contains('visible');
-        console.log('Sidebar current state - isOpen:', isOpen);
+    mobileNavToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!mobileNavSidebar) return;
 
-        if (!isOpen) {
-            console.log('Opening sidebar...');
+        const isOpening = !mobileNavSidebar.classList.contains('visible');
+        
+        if (isOpening) {
             mobileNavSidebar.classList.remove('hidden');
-            // Force a reflow to ensure transition works
             void mobileNavSidebar.offsetWidth; 
             mobileNavSidebar.classList.add('visible');
             mobileNavSidebar.setAttribute('aria-hidden', 'false');
             document.body.classList.add('mobile-nav-open');
             mobileNavToggle.classList.add('open');
-            mobileNavToggle.innerHTML = _closeSvg;
-            mobileNavToggle.setAttribute('aria-label', 'Close menu');
+            // Removed: mobileNavToggle.innerHTML = _closeSvg; // Keep hamburger icon as requested
             
-            // show backdrop
             if (mobileNavBackdrop) {
                 mobileNavBackdrop.classList.remove('hidden');
                 void mobileNavBackdrop.offsetWidth;
                 mobileNavBackdrop.classList.add('visible');
             }
         } else {
-            console.log('Closing sidebar...');
-            mobileNavSidebar.classList.remove('visible');
-            mobileNavSidebar.setAttribute('aria-hidden', 'true');
-            document.body.classList.remove('mobile-nav-open');
-            mobileNavToggle.classList.remove('open');
-            mobileNavToggle.innerHTML = _hamburgerSvg;
-            mobileNavToggle.setAttribute('aria-label', 'Open menu');
-            
-            // hide backdrop
-            if (mobileNavBackdrop) {
-                mobileNavBackdrop.classList.remove('visible');
-                setTimeout(() => {
-                    if (!mobileNavSidebar.classList.contains('visible')) {
-                        mobileNavBackdrop.classList.add('hidden');
-                        mobileNavSidebar.classList.add('hidden');
-                    }
-                }, 300); // Wait for transition
-            } else {
-                mobileNavSidebar.classList.add('hidden');
-            }
+            closeMobileMenu();
         }
-    };
+    });
 }
 if (mobileNavClose) {
-    mobileNavClose.onclick = () => {
-        console.log('mobileNavClose clicked');
-        mobileNavSidebar.classList.add('hidden');
-        mobileNavSidebar.classList.remove('visible');
-        mobileNavSidebar.setAttribute('aria-hidden', 'true');
-        mobileNavBackdrop?.classList.remove('visible');
-        mobileNavBackdrop?.classList.add('hidden');
-        document.body.classList.remove('mobile-nav-open');
-        // restore hamburger
-        if (mobileNavToggle) {
-            mobileNavToggle.classList.remove('open');
-            mobileNavToggle.innerHTML = _hamburgerSvg;
-            mobileNavToggle.setAttribute('aria-label', 'Open menu');
-        }
-    };
+    mobileNavClose.onclick = () => closeMobileMenu();
 }
 
 // Close mobile nav when clicking links
-if (mobileGenerateLink) mobileGenerateLink.onclick = (e) => { e.preventDefault(); document.body.classList.remove('mobile-nav-open'); mobileNavSidebar.classList.add('hidden'); mobileNavSidebar.classList.remove('visible'); showSection('generator'); };
-if (mobileChatLink) mobileChatLink.onclick = (e) => { e.preventDefault(); document.body.classList.remove('mobile-nav-open'); mobileNavSidebar.classList.add('hidden'); mobileNavSidebar.classList.remove('visible'); showSection('chat'); };
-if (mobilePricingLink) mobilePricingLink.onclick = (e) => { e.preventDefault(); document.body.classList.remove('mobile-nav-open'); mobileNavSidebar.classList.add('hidden'); mobileNavSidebar.classList.remove('visible'); showSection('pricing'); };
-if (mobileAdminBtn) mobileAdminBtn.onclick = (e) => { e.preventDefault(); document.body.classList.remove('mobile-nav-open'); mobileNavSidebar.classList.add('hidden'); mobileNavSidebar.classList.remove('visible'); showSection('admin'); };
+if (mobileGenerateLink) mobileGenerateLink.onclick = (e) => { e.preventDefault(); closeMobileMenu(); showSection('generator'); };
+if (mobileChatLink) mobileChatLink.onclick = (e) => { e.preventDefault(); closeMobileMenu(); showSection('chat'); };
+if (mobilePricingLink) mobilePricingLink.onclick = (e) => { e.preventDefault(); closeMobileMenu(); showSection('pricing'); };
+if (mobileAdminBtn) mobileAdminBtn.onclick = (e) => { e.preventDefault(); closeMobileMenu(); showSection('admin'); };
 
 // Backdrop handling: get element if present
 const mobileNavBackdrop = document.getElementById('mobileNavBackdrop');
@@ -829,20 +875,7 @@ document.addEventListener('click', (e) => {
 
 document.addEventListener('keyup', (e) => { if (e.key === 'Escape' && document.body.classList.contains('mobile-nav-open')) { mobileNavClose?.click(); } });
 
-// When opening via toggle, show/hide backdrop
-if (mobileNavToggle) {
-    const original = mobileNavToggle.onclick;
-    mobileNavToggle.onclick = (e) => {
-        original && original(e);
-        if (mobileNavSidebar.classList.contains('visible')) {
-            mobileNavBackdrop?.classList.remove('hidden');
-            setTimeout(() => mobileNavBackdrop?.classList.add('visible'), 10);
-        } else {
-            mobileNavBackdrop?.classList.remove('visible');
-            setTimeout(() => mobileNavBackdrop?.classList.add('hidden'), 200);
-        }
-    };
-}
+// Mobile navigation initialized above - removing redundant wrapper to fix sluggishness.
 
 if (chatHistoryBtn) {
     chatHistoryBtn.onclick = () => {
@@ -924,11 +957,6 @@ function initCustomDropdown(dropdown) {
         });
     });
 }
-
-// Global click to close dropdowns
-document.addEventListener('click', () => {
-    document.querySelectorAll('.custom-dropdown').forEach(d => d.classList.remove('open'));
-});
 
 // Initialize ratio dropdown only
 initCustomDropdown(ratioDropdown);
@@ -1090,7 +1118,7 @@ async function generate() {
         }
     } catch (e) {
         if (e.message !== 'Insufficient credits') {
-            alert("Error: " + e.message);
+            showToast("Error: " + e.message, 'error');
         }
         loadingState.classList.add('hidden');
         placeholder.classList.remove('hidden');
@@ -1117,7 +1145,7 @@ if (downloadBtn) {
 document.querySelectorAll('.buy-btn').forEach(btn => {
     btn.onclick = () => {
         const plan = btn.getAttribute('data-plan');
-        alert(`Enterprise Notice: You selected the ${plan} Plan!\n\nSorry, we haven't included an actual payment method yet. This website is a professional demo project. \n\nKeep creating!`);
+        showToast(`Enterprise Notice: You selected the ${plan} Plan! Sorry, we haven't included an actual payment method yet. This website is a professional demo project.`, 'warning', 6000);
     };
 });
 
@@ -1137,9 +1165,10 @@ async function loadAdminData() {
     if (!auth.currentUser || currentUserType !== 'admin') return;
     
     try {
-        // Load Stats
+        // SECURITY FIX: Use ID Token for authentication
+        const idToken = await auth.currentUser.getIdToken();
         const statsRes = await fetch('/api/admin/stats', {
-            headers: { 'X-Admin-UID': auth.currentUser.uid }
+            headers: { 'Authorization': `Bearer ${idToken}` }
         });
         console.log('Admin stats response status:', statsRes.status);
         let statsData = {};
@@ -1217,7 +1246,7 @@ async function loadAdminData() {
             document.getElementById('statTotalCredits').textContent = 'N/A';
             // If authorization issue, suggest re-login
             if (statsRes.status === 401 || statsRes.status === 403) {
-                alert('Admin authentication failed. Please sign out and sign in again.');
+                showToast('Admin authentication failed. Please sign out and sign in again.', 'error', 6000);
             }
         } else if (statsData.success) {
             document.getElementById('statTotalUsers').textContent = statsData.stats.totalUsers;
@@ -1250,8 +1279,9 @@ async function loadAdminUsers() {
     usersListEl.innerHTML = '<div class="loading-users">Loading users...</div>';
     
     try {
+        const idToken = await auth.currentUser.getIdToken();
         const res = await fetch('/api/admin/users', {
-            headers: { 'X-Admin-UID': auth.currentUser.uid }
+            headers: { 'Authorization': `Bearer ${idToken}` }
         });
         console.log('Admin users response status:', res.status);
         const data = await res.json();
@@ -1341,24 +1371,25 @@ window.adminToggleBlock = async function(targetUid, block) {
     }
 
     try {
+        const idToken = await auth.currentUser.getIdToken();
         const res = await fetch('/api/admin/user/block', {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'X-Admin-UID': auth.currentUser.uid 
+                'Authorization': `Bearer ${idToken}` 
             },
             body: JSON.stringify({ targetUid, block })
         });
         const data = await res.json();
         if (data.success) {
-            alert(`User ${block ? 'blocked' : 'unblocked'} successfully.`);
+            showToast(`User ${block ? 'blocked' : 'unblocked'} successfully.`);
             loadAdminUsers();
             loadAdminData();
         } else {
-            alert('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'error');
         }
     } catch (e) {
-        alert('Error: ' + e.message);
+        showToast('Error: ' + e.message, 'error');
     } finally {
         if (btn) {
             btn.disabled = false;
@@ -1381,24 +1412,25 @@ window.adminDeleteUser = async function(targetUid) {
     }
 
     try {
+        const idToken = await auth.currentUser.getIdToken();
         const res = await fetch('/api/admin/user/delete', {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'X-Admin-UID': auth.currentUser.uid 
+                'Authorization': `Bearer ${idToken}` 
             },
             body: JSON.stringify({ targetUid })
         });
         const data = await res.json();
         if (data.success) {
-            alert('User deleted successfully.');
+            showToast('User deleted successfully.');
             loadAdminUsers();
             loadAdminData();
         } else {
-            alert('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'error');
         }
     } catch (e) {
-        alert('Error: ' + e.message);
+        showToast('Error: ' + e.message, 'error');
     } finally {
         if (btn) {
             btn.disabled = false;
@@ -1410,10 +1442,10 @@ window.adminDeleteUser = async function(targetUid) {
 // Quick Actions Event Handlers
 document.getElementById('refreshUsersBtn')?.addEventListener('click', loadAdminUsers);
 
-document.getElementById('quickAddCreditsBtn')?.addEventListener('click', async (e) => {
+    document.getElementById('quickAddCreditsBtn')?.addEventListener('click', async (e) => {
     const userInput = document.getElementById('quickActionUserInput')?.value.trim();
     const amount = parseInt(document.getElementById('quickActionCreditsAmount')?.value) || 0;
-    if (!userInput || amount <= 0) return alert('Please enter a valid user and amount.');
+    if (!userInput || amount <= 0) return showToast('Please enter a valid user and amount.', 'warning');
     
     await adminModifyCredits(userInput, 'add', amount, e.currentTarget);
 });
@@ -1421,14 +1453,14 @@ document.getElementById('quickAddCreditsBtn')?.addEventListener('click', async (
 document.getElementById('quickSetCreditsBtn')?.addEventListener('click', async (e) => {
     const userInput = document.getElementById('quickActionUserInput')?.value.trim();
     const amount = parseInt(document.getElementById('quickActionCreditsAmount')?.value) || 0;
-    if (!userInput) return alert('Please enter a valid user.');
+    if (!userInput) return showToast('Please enter a valid user.', 'warning');
     
     await adminModifyCredits(userInput, 'set', amount, e.currentTarget);
 });
 
 document.getElementById('quickResetCreditsBtn')?.addEventListener('click', async (e) => {
     const userInput = document.getElementById('quickActionUserInput')?.value.trim();
-    if (!userInput) return alert('Please enter a valid user.');
+    if (!userInput) return showToast('Please enter a valid user.', 'warning');
     
     await adminModifyCredits(userInput, 'reset', 0, e.currentTarget);
 });
@@ -1448,11 +1480,11 @@ async function adminModifyCredits(userInput, action, amount, btnEl = null) {
     } else {
         // If not in cache, and it's not a UID-like string, it's probably a missing username
         if (userInput.length < 25) { // Firebase UIDs are usually around 28 chars
-            return alert(`Error: User "${userInput}" not found. If this is a username, make sure the user has set it up first.`);
+            return showToast(`Error: User "${userInput}" not found. If this is a username, make sure the user has set it up first.`, 'error');
         }
     }
     
-    if (!targetUid) return alert('Invalid User ID or Username');
+    if (!targetUid) return showToast('Invalid User ID or Username', 'error');
 
     // Loading state for button
     const originalBtnHtml = btnEl ? btnEl.innerHTML : null;
@@ -1462,24 +1494,25 @@ async function adminModifyCredits(userInput, action, amount, btnEl = null) {
     }
     
     try {
+        const idToken = await auth.currentUser.getIdToken();
         const res = await fetch('/api/admin/user/credits', {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'X-Admin-UID': auth.currentUser.uid 
+                'Authorization': `Bearer ${idToken}` 
             },
             body: JSON.stringify({ targetUid, action, amount })
         });
         const data = await res.json();
         if (data.success) {
-            alert(`Credits updated! New balance: ${data.credits}`);
+            showToast(`Credits updated! New balance: ${data.credits}`);
             loadAdminUsers();
             loadAdminData();
         } else {
-            alert('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'error');
         }
     } catch (e) {
-        alert('Error: ' + e.message);
+        showToast('Error: ' + e.message, 'error');
     } finally {
         if (btnEl && originalBtnHtml) {
             btnEl.disabled = false;
@@ -1493,7 +1526,7 @@ async function adminModifyCredits(userInput, action, amount, btnEl = null) {
  */
 window.adminMakeAdmin = async function(targetUid, alreadyAdmin) {
     if (alreadyAdmin === 'true') {
-        return alert('This person is already an admin!');
+        return showToast('This person is already an admin!', 'warning');
     }
     
     if (!confirm('Are you sure you want to make this user an Admin? This grants full access to the Dashboard!')) return;
@@ -1508,24 +1541,25 @@ window.adminMakeAdmin = async function(targetUid, alreadyAdmin) {
     }
     
     try {
+        const idToken = await auth.currentUser.getIdToken();
         const res = await fetch('/api/admin/user/promote', {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'X-Admin-UID': auth.currentUser.uid 
+                'Authorization': `Bearer ${idToken}` 
             },
             body: JSON.stringify({ targetUid })
         });
         const data = await res.json();
         if (data.success) {
-            alert('User promoted to Admin successfully.');
+            showToast('User promoted to Admin successfully.');
             loadAdminUsers();
             loadAdminData();
         } else {
-            alert('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'error');
         }
     } catch (e) {
-        alert('Error: ' + e.message);
+        showToast('Error: ' + e.message, 'error');
     } finally {
         if (btn) {
             btn.disabled = false;
@@ -1682,12 +1716,12 @@ if (setUsernameBtn) {
                 usernameSetWrapper.classList.add('hidden');
                 usernameDisplayWrapper.classList.remove('hidden');
                 currentUsernameDisplay.textContent = data.username;
-                alert('Username set successfully!');
+                showToast('Username set successfully!');
             } else {
-                alert('Error: ' + data.error);
+                showToast('Error: ' + data.error, 'error');
             }
         } catch (e) {
-            alert('Error: ' + e.message);
+            showToast('Error: ' + e.message, 'error');
         }
         
         setUsernameBtn.disabled = false;
@@ -1742,7 +1776,7 @@ if (copyUsernameBtn) {
             textarea.select();
             document.execCommand('copy');
             document.body.removeChild(textarea);
-            alert('Username copied: ' + currentUsername);
+            showToast('Username copied: ' + currentUsername);
         }
     });
 }
@@ -1803,8 +1837,8 @@ async function sendChatMessage() {
                 chatHistory = chatHistory.slice(-20);
             }
             
-            // Auto-save current session
-            saveChatSession();
+            // Auto-save current session to cloud
+            await saveChatSession();
         } else {
             addMessageToChat('error', data.error || 'Failed to get a response. Please try again.');
         }
@@ -2087,7 +2121,7 @@ function startNewChat() {
 /**
  * Toggle chat history sidebar
  */
-function toggleChatHistorySidebar() {
+async function toggleChatHistorySidebar() {
     if (!chatHistorySidebar) return;
     
     if (chatHistorySidebar.classList.contains('hidden')) {
@@ -2095,11 +2129,11 @@ function toggleChatHistorySidebar() {
         chatHistorySidebar.classList.add('visible');
         document.body.classList.add('chat-sidebar-open');
         showChatHistoryLoading();
-        setTimeout(() => {
-            loadChatSessions();
-            renderChatHistoryList();
-            hideChatHistoryLoading();
-        }, 300);
+        
+        // Load from cloud then render
+        await loadChatSessions();
+        renderChatHistoryList();
+        hideChatHistoryLoading();
     } else {
         chatHistorySidebar.classList.remove('visible');
         chatHistorySidebar.classList.add('hidden');
@@ -2108,13 +2142,12 @@ function toggleChatHistorySidebar() {
 }
 
 /**
- * Save current chat session to localStorage
+ * Save current chat session to MongoDB
  */
-function saveChatSession() {
-    if (chatHistory.length === 0) return;
+async function saveChatSession() {
+    if (chatHistory.length === 0 || !auth.currentUser) return;
     
-    const userId = auth.currentUser?.uid || 'guest';
-    const storageKey = `chatSessions_${userId}`;
+    const uid = auth.currentUser.uid;
     
     // Get first user message as title
     const firstUserMsg = chatHistory.find(msg => msg.role === 'user');
@@ -2124,43 +2157,38 @@ function saveChatSession() {
         id: currentChatId || Date.now().toString(),
         title: title + (title.length >= 50 ? '...' : ''),
         messages: chatHistory,
-        timestamp: Date.now()
+        timestamp: new Date()
     };
     
-    // Load existing sessions
-    let sessions = [];
     try {
-        sessions = JSON.parse(localStorage.getItem(storageKey)) || [];
+        const res = await fetch('/api/user/chats/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uid, session })
+        });
+        const data = await res.json();
+        if (data.success) {
+            allChatSessions = data.chats;
+        }
     } catch (e) {
-        sessions = [];
+        console.error("Failed to save chat to cloud:", e);
     }
-    
-    // Update or add session
-    const existingIndex = sessions.findIndex(s => s.id === session.id);
-    if (existingIndex >= 0) {
-        sessions[existingIndex] = session;
-    } else {
-        sessions.unshift(session);
-    }
-    
-    // Keep only last 20 sessions
-    sessions = sessions.slice(0, 20);
-    
-    localStorage.setItem(storageKey, JSON.stringify(sessions));
-    allChatSessions = sessions;
 }
 
 /**
- * Load chat sessions from localStorage
+ * Load chat sessions from MongoDB
  */
-function loadChatSessions() {
-    const userId = auth.currentUser?.uid || 'guest';
-    const storageKey = `chatSessions_${userId}`;
+async function loadChatSessions() {
+    if (!auth.currentUser) return;
     
     try {
-        allChatSessions = JSON.parse(localStorage.getItem(storageKey)) || [];
+        const res = await fetch(`/api/user/chats/${auth.currentUser.uid}`);
+        const data = await res.json();
+        if (data.success) {
+            allChatSessions = data.chats;
+        }
     } catch (e) {
-        allChatSessions = [];
+        console.error("Failed to load chats from cloud:", e);
     }
 }
 
@@ -2205,24 +2233,29 @@ window.toggleChatMenu = function(event, sessionId) {
 /**
  * Delete a chat session
  */
-window.deleteChatSession = function(sessionId) {
+window.deleteChatSession = async function(sessionId) {
     if (!confirm('Are you sure you want to delete this chat?')) return;
     
-    const userId = auth.currentUser?.uid || 'guest';
-    const storageKey = `chatSessions_${userId}`;
+    if (!auth.currentUser) return;
     
     try {
-        let sessions = JSON.parse(localStorage.getItem(storageKey)) || [];
-        sessions = sessions.filter(s => s.id !== sessionId);
-        localStorage.setItem(storageKey, JSON.stringify(sessions));
-        allChatSessions = sessions;
+        const res = await fetch('/api/user/chats/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uid: auth.currentUser.uid, sessionId })
+        });
+        const data = await res.json();
         
-        // If deleted chat was active, start a new chat
-        if (currentChatId === sessionId) {
-            startNewChat();
+        if (data.success) {
+            allChatSessions = data.chats;
+            
+            // If deleted chat was active, start a new chat
+            if (currentChatId === sessionId) {
+                startNewChat();
+            }
+            
+            renderChatHistoryList();
         }
-        
-        renderChatHistoryList();
     } catch (e) {
         alert('Error deleting chat: ' + e.message);
     }
@@ -2373,4 +2406,50 @@ window.addEventListener('popstate', handleRouteChange);
 
 // Initial load
 handleRouteChange();
+
+/**
+ * Scroll effect for Chat "Generate Image" button on mobile
+ * Hides the floating button when user scrolls down to keep UI clean
+ */
+window.addEventListener('scroll', () => {
+    // Only apply on mobile where the button is fixed/floating
+    if (window.innerWidth > 768) return;
+    
+    const btn = document.getElementById('goToGeneratorBtn');
+    const chat = document.getElementById('chatSection');
+    
+    if (!btn || !chat || chat.classList.contains('hidden')) return;
+
+    // Detect scroll distance
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+    
+    if (scrollTop > 30) {
+        btn.classList.add('scrolled');
+    } else {
+        btn.classList.remove('scrolled');
+    }
+}, { passive: true });
+
+// ==================== IMAGE MODAL ====================
+window.openImageModal = (url) => {
+    const modal = document.getElementById('imageModal');
+    const modalImg = document.getElementById('modalImage');
+    if (modal && modalImg) {
+        modalImg.src = url;
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+    }
+};
+
+window.closeImageModal = () => {
+    const modal = document.getElementById('imageModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        document.body.style.overflow = '';
+    }
+};
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeImageModal();
+});
 
