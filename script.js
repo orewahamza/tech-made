@@ -246,7 +246,7 @@ function showSection(sectionId, isRedirected = false, fromRouter = false) {
     if (sectionId === 'landing') landingSection.classList.remove('hidden');
     else if (sectionId === 'auth') authSection.classList.remove('hidden');
     else if (sectionId === 'generator') {
-        if (isSyncing) {
+        if (isSyncing && auth.currentUser) {
             pendingGenerator = true;
             showSyncScreen("Syncing Studio", "Please wait while we verify your account credits.", true);
             return;
@@ -282,13 +282,14 @@ function showSection(sectionId, isRedirected = false, fromRouter = false) {
         loadAdminData();
     }
     else if (sectionId === 'chat') {
-        if (!auth.currentUser) {
-            showSection('auth');
-            return;
-        }
         chatSection.classList.remove('hidden');
-        // Load chat history when opening chat section
-        loadChatSessions();
+        // Load chat history (if logged in)
+        if (auth.currentUser) {
+            loadChatSessions();
+        } else {
+             // Clear history UI if not logged in
+            if (chatHistoryList) chatHistoryList.innerHTML = '<p class="empty-history-msg">Login to see history</p>';
+        }
         // Focus on input when opening chat
         setTimeout(() => chatInput?.focus(), 300);
     }
@@ -666,7 +667,18 @@ onAuthStateChanged(auth, async (user) => {
         pendingBase64Pfp = null;
         isSyncing = false;
         syncOverlay.classList.add('hidden');
-        showSection('landing');
+        
+        // Only redirect to landing if on a protected route
+        const protectedSections = ['history', 'customize', 'admin'];
+        const currentSectionIsProtected = !historySection.classList.contains('hidden') || 
+                                          !customizeSection.classList.contains('hidden') || 
+                                          !adminSection.classList.contains('hidden');
+                                          
+        if (currentSectionIsProtected) {
+            showSection('landing');
+        }
+        // If on generator, chat, or auth, stay there.
+        updateCreditsUI();
     }
 });
 
@@ -753,8 +765,7 @@ logoToHome.onclick = () => showSection('landing');
 navLoginBtn.onclick = () => showSection('auth');
 navGenerateLink.onclick = (e) => {
     e.preventDefault();
-    if (auth.currentUser) showSection('generator');
-    else showSection('auth');
+    showSection('generator');
 };
 navPricingLink.onclick = (e) => {
     e.preventDefault();
@@ -769,18 +780,17 @@ viewHistoryLink.onclick = (e) => { e.preventDefault(); showSection('history'); }
 logoutBtn.onclick = (e) => { e.preventDefault(); signOut(auth); };
 
 // Main CTA buttons - Chat with AI (primary) and Generate Image (secondary)
-getStartedBtn.onclick = () => auth.currentUser ? showSection('chat') : showSection('auth');
+getStartedBtn.onclick = () => showSection('chat');
 
 if (generateImageBtn) {
-    generateImageBtn.onclick = () => auth.currentUser ? showSection('generator') : showSection('auth');
+    generateImageBtn.onclick = () => showSection('generator');
 }
 
 // Chat Navigation
 if (navChatLink) {
     navChatLink.onclick = (e) => {
         e.preventDefault();
-        if (auth.currentUser) showSection('chat');
-        else showSection('auth');
+        showSection('chat');
     };
 }
 
