@@ -1186,6 +1186,13 @@ if (emailAuthBtn) {
  * Generator
  */
 async function generate() {
+    // Check if user is logged in
+    if (!auth.currentUser) {
+        showToast("Please log in first to generate images.", "error");
+        showSection('auth');
+        return;
+    }
+
     if (userCredits <= 0) {
         showSection('pricing', true); // True = Show redirect message
         return;
@@ -1917,6 +1924,13 @@ if (copyUsernameBtn) {
 async function sendChatMessage() {
     const message = chatInput.value.trim();
     if (!message || isChatSending) return;
+
+    // Check if user is logged in
+    if (!auth.currentUser) {
+        showToast("Please log in first to chat.", "error");
+        showSection('auth');
+        return;
+    }
     
     // Clear input and disable button
     chatInput.value = '';
