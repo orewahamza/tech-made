@@ -17,6 +17,7 @@
 
   <!-- Custom Styles -->
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="toasts.css" />
   <link rel="icon" type="image/png" href="/public/favicon5.ico" />
 </head>
 
@@ -211,8 +212,8 @@
     <!-- Auth Modal/Section -->
     <section id="authSection" class="auth-section hidden">
       <div class="auth-card">
-        <h2>Welcome to tech-made</h2>
-        <p>Join the community of AI creators</p>
+        <h2 id="authTitle">Welcome Back</h2>
+        <p id="authSubtitle">Login to continue creating</p>
         <button id="googleLoginBtn" class="google-btn">
           <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
             <path
@@ -234,7 +235,10 @@
         <div class="auth-form">
           <input type="email" id="emailInput" placeholder="Email Address" />
           <input type="password" id="passwordInput" placeholder="Password" />
-          <button id="emailAuthBtn" class="primary-btn">Continue</button>
+          <button id="emailAuthBtn" class="primary-btn">Log In</button>
+        </div>
+        <div class="auth-toggle-wrapper">
+          <p id="authToggleText">Don't have an account? <span id="authToggleLink" class="auth-link">Sign Up</span></p>
         </div>
         <p class="auth-footer">
           By continuing, you agree to our Terms of Service.

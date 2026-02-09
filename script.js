@@ -7,10 +7,30 @@ import {
     googleProvider, 
     signInWithPopup, 
     signOut, 
-    onAuthStateChanged 
+    onAuthStateChanged,
+    signInWithEmailAndPassword,
+    createUserWithEmailAndPassword
 } from './firebase-config.js';
 
 import { updateProfile } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+// Global Error Handler
+window.onerror = function(msg, url, line, col, error) {
+    console.error('Captured Error:', msg, error);
+    // Ignore routine resize/scroll errors or extension noise
+    if (msg.includes('ResizeObserver') || msg.includes('extension')) return false;
+    
+    // User-friendly fallback
+    let displayMsg = "Something went wrong. Please try again.";
+    
+    if (msg.includes('auth')) displayMsg = "Authentication issue. Please refresh.";
+    if (msg.includes('network') || msg.includes('fetch')) displayMsg = "Network error. Check your connection.";
+    
+    if (typeof showToast === 'function') {
+        showToast(displayMsg, 'error', 5000);
+    }
+    return false;
+ };
 
 /**
  * Elegant Toast Notifications
@@ -135,6 +155,17 @@ const currentUsernameDisplay = document.getElementById('currentUsernameDisplay')
 const usernameInput = document.getElementById('usernameInput');
 const usernameStatus = document.getElementById('usernameStatus');
 const setUsernameBtn = document.getElementById('setUsernameBtn');
+
+// DOM Elements - Auth Section
+const emailInput = document.getElementById('emailInput');
+const passwordInput = document.getElementById('passwordInput');
+const emailAuthBtn = document.getElementById('emailAuthBtn');
+// Auth Toggle Elements
+const authTitle = document.getElementById('authTitle');
+const authSubtitle = document.getElementById('authSubtitle');
+const authToggleLink = document.getElementById('authToggleLink');
+const authToggleText = document.getElementById('authToggleText');
+let isLoginMode = true;
 
 // DOM Elements - Chat Section
 const chatSection = document.getElementById('chatSection');
@@ -1033,6 +1064,101 @@ if (googleLoginBtnElem) {
     googleLoginBtnElem.onclick = async () => {
         try { await signInWithPopup(auth, googleProvider); } catch (e) { alert("Login failed"); }
     };
+}
+
+/**
+ * 📧 Email/Password Authentication Logic
+ */
+if (emailAuthBtn) {
+    // 1. Auth Mode Toggle Logic
+    const toggleAuthMode = () => {
+        isLoginMode = !isLoginMode;
+        
+        // Reset Inputs
+        emailInput.value = '';
+        passwordInput.value = '';
+        
+        // Update UI Text
+        if (isLoginMode) {
+            authTitle.textContent = "Welcome Back";
+            authSubtitle.textContent = "Login to continue creating";
+            emailAuthBtn.textContent = "Log In";
+            authToggleText.innerHTML = `Don't have an account? <span id="authToggleLink" class="auth-link">Sign Up</span>`;
+        } else {
+            authTitle.textContent = "Create Account";
+            authSubtitle.textContent = "Join the community of AI creators";
+            emailAuthBtn.textContent = "Sign Up";
+            authToggleText.innerHTML = `Already have an account? <span id="authToggleLink" class="auth-link">Log In</span>`;
+        }
+        
+        // Re-attach listener to new dynamic link
+        document.getElementById('authToggleLink').addEventListener('click', toggleAuthMode);
+    };
+
+    // Attach initial listener
+    if (authToggleLink) authToggleLink.addEventListener('click', toggleAuthMode);
+
+    // 2. Auth Action Logic
+    const handleAuthAction = async (e) => {
+        // Prevent double-firing on some devices
+        if (e.type === 'touchend') e.preventDefault(); 
+        
+        if (emailAuthBtn.disabled) return;
+
+        const email = emailInput.value.trim();
+        const password = passwordInput.value;
+
+        if (!email || !password) {
+            showToast("Please enter both email and password.", "warning");
+            return;
+        }
+        
+        emailAuthBtn.disabled = true;
+        const originalBtnText = emailAuthBtn.textContent;
+        emailAuthBtn.textContent = "Processing...";
+
+        try {
+            if (isLoginMode) {
+                // --- Log In Mode ---
+                await signInWithEmailAndPassword(auth, email, password);
+                showToast("Welcome back!", "success");
+            } else {
+                // --- Sign Up Mode ---
+                await createUserWithEmailAndPassword(auth, email, password);
+                showToast("Account created! Welcome to tech-made.", "success");
+            }
+        } catch (error) {
+            // Helper to get friendly error message
+            const getFriendlyError = (code) => {
+                switch(code) {
+                    case 'auth/invalid-email': return "Please enter a valid email address.";
+                    case 'auth/user-disabled': return "This account has been disabled.";
+                    case 'auth/user-not-found': return "No account found. Please sign up.";
+                    case 'auth/wrong-password': return "Incorrect password. Please try again.";
+                    case 'auth/invalid-credential': return "Incorrect email or password.";
+                    case 'auth/weak-password': return "Password should be at least 6 characters.";
+                    case 'auth/email-already-in-use': return "An account with this email already exists.";
+                    case 'auth/network-request-failed': return "Network error. Please check your connection.";
+                    case 'auth/too-many-requests': return "Too many attempts. Please try again later.";
+                    default: return "Authentication failed. Please try again.";
+                }
+            };
+            
+            // Handle specific errors based on mode
+            if (isLoginMode && (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential')) {
+                 showToast("Incorrect email or password.", "error");
+            } else {
+                showToast(getFriendlyError(error.code), "error");
+            }
+        } finally {
+            emailAuthBtn.disabled = false;
+            emailAuthBtn.textContent = originalBtnText; // Button text stays correct because of toggleAuthMode logic
+        }
+    };
+
+    // Use listeners instead of onclick for better mobile support
+    emailAuthBtn.addEventListener('click', handleAuthAction);
+    emailAuthBtn.addEventListener('touchend', handleAuthAction);
 }
 
 // Settings Update

@@ -19,6 +19,11 @@
     --color-gray-100: #f3f4f6;
     --color-gray-400: #9ca3af;
     --color-gray-500: #6b7280;
+    --z-index-bg: -10;
+    --z-index-content: 1;
+    --z-index-nav: 1000;
+    --z-index-overlay: 5000;
+    --z-index-sidebar: 10000;
 
     --gradient-luxury: linear-gradient(90deg, #dc2626 0%, #2563eb 100%);
     --gradient-dark: linear-gradient(180deg, var(--color-black) 0%, var(--color-black-light) 100%);
@@ -79,7 +84,7 @@ body {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.95);
-    z-index: 5000;
+    z-index: var(--z-index-overlay);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -155,7 +160,7 @@ body {
     top: 0;
     left: 0;
     width: 100%;
-    z-index: 900;
+    z-index: var(--z-index-nav);
     background: rgba(10, 10, 15, 0.4);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
@@ -736,6 +741,25 @@ body {
 }
 
 /* Landing Section */
+.landing-section,
+.auth-section,
+.customize-section,
+.history-section,
+.admin-section,
+.pricing-section,
+.chat-section,
+.generator-main {
+    position: relative;
+    z-index: var(--z-index-content);
+}
+
+.bg-gradient,
+.bg-glow,
+.bg-particles {
+    pointer-events: none !important;
+    user-select: none !important;
+}
+
 .landing-section {
     text-align: center;
     padding: 4rem 0;
@@ -2008,11 +2032,13 @@ body {
     visibility: hidden;
     transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1);
     z-index: 10005;
+    pointer-events: none; /* KEY FIX: Prevent blocking clicks when hidden */
 }
 
 .mobile-nav-sidebar.visible {
     opacity: 1;
     visibility: visible;
+    pointer-events: auto;
 }
 
 .mobile-nav-header {
@@ -2096,7 +2122,7 @@ body {
         opacity: 0;
         visibility: hidden;
         transition: opacity 0.2s ease;
-        z-index: 10000;
+        z-index: var(--z-index-sidebar);
         pointer-events: none;
         /* do not block clicks when hidden */
     }
@@ -4328,4 +4354,30 @@ input[type=number] {
         top: -60px;
         right: 10px;
     }
+}
+
+/* Auth Toggle */
+.auth-toggle-wrapper {
+    margin-top: 1.5rem;
+    text-align: center;
+    font-size: 0.95rem;
+    color: var(--color-gray-400);
+}
+
+.auth-toggle-wrapper p {
+    margin: 0;
+}
+
+.auth-link {
+    color: var(--color-blue-light);
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: color 0.2s;
+    margin-left: 0.25rem;
+}
+
+.auth-link:hover {
+    color: white;
+    text-decoration: underline;
 }
